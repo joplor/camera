@@ -25,8 +25,7 @@ export class Alien {
       toneMapped: false,
     });
     this.sprite = new THREE.Sprite(this.mat);
-    this.sprite.scale.set(baseScale, baseScale * 1.35, 1);
-    this.sprite.renderOrder = 50;
+    this.sprite.scale.set(baseScale * 2.5, baseScale * 3.4, 1);    this.sprite.renderOrder = 50;
     this.sprite.visible = false;
     scene.add(this.sprite);
 
@@ -58,8 +57,7 @@ export class Alien {
   /** Pulse the sprite subtly — a heartbeat-style scale wobble. */
   pulse(t, amount) {
     const k = 1 + Math.sin(t * 6) * 0.02 * amount;
-    this.sprite.scale.set(this.baseScale * k, this.baseScale * 1.35 * k, 1);
-  }
+    this.sprite.scale.set(this.baseScale * 2.5 * k, this.baseScale * 3.4 * k, 1);  }
 
   /** Bright overlay tint while the flashlight is on us. */
   lightHit(dt) {
