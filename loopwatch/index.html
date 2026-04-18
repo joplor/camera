@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>LOOPWATCH — Observation Terminal v0.7.3</title>
+<link rel="stylesheet" href="./style.css" />
+
+<!-- Three.js via CDN. Pinned to a version that ships the modules we use. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<!--
+  The DOM is layered. Each layer is a stacking plane over the 3D canvas.
+  Everything in #ui is styled to look like a retro-futuristic lab console.
+  The 3D world renders into #game-canvas underneath it all.
+-->
+
+<canvas id="game-canvas"></canvas>
+
+<!-- CRT / scanline / vignette overlay. Pure CSS, always on. -->
+<div id="crt-overlay" aria-hidden="true">
+  <div class="scanlines"></div>
+  <div class="vignette"></div>
+  <div class="noise"></div>
+</div>
+
+<!-- Boot sequence. Shown once at launch; replayed after hard resets. -->
+<section id="boot" class="screen">
+  <pre id="boot-log"></pre>
+</section>
+
+<!-- Main menu. Looks like a surveillance system that just finished booting. -->
+<section id="main-menu" class="screen hidden">
+  <header class="menu-header">
+    <div class="brand">
+      <span class="brand-mark">◉</span>
+      <span class="brand-text">LOOPWATCH</span>
+      <span class="brand-sub">// OBSERVATION TERMINAL</span>
+    </div>
+    <div class="menu-status">
+      <span class="dot live"></span> FACILITY LINK · <span id="menu-link-state">ESTABLISHED</span>
+    </div>
+  </header>
+
+  <div class="menu-body">
+    <aside class="menu-nav">
+      <button class="menu-btn" data-action="new">&gt; NEW OBSERVATION</button>
+      <button class="menu-btn" data-action="continue">&gt; CONTINUE</button>
+      <button class="menu-btn" data-action="logs">&gt; SESSION LOGS</button>
+      <button class="menu-btn" data-action="settings">&gt; SYSTEM</button>
+      <button class="menu-btn danger" data-action="purge">&gt; PURGE STATE</button>
+    </aside>
+
+    <main class="menu-view">
+      <div class="menu-panel" id="menu-panel-primary">
+        <div class="panel-title">FACILITY KARON–7 · SUBLEVEL 3</div>
+        <div class="panel-row"><span>CYCLE COUNT</span><span id="menu-cycles">0000</span></div>
+        <div class="panel-row"><span>ANOMALY INDEX</span><span id="menu-anomaly">0.00</span></div>
+        <div class="panel-row"><span>KNOWN ENDINGS</span><span id="menu-endings">0 / 4</span></div>
+        <div class="panel-row"><span>OBSERVER CLEARANCE</span><span>TIER–B</span></div>
+        <div class="panel-row warn"><span>INTEGRITY</span><span id="menu-integrity">NOMINAL</span></div>
+
+        <div class="sigils">
+          <figure class="sigil">
+            <img data-slot="image_a" alt="" />
+            <figcaption>SUBJECT A · STABLE</figcaption>
+          </figure>
+          <figure class="sigil corrupted">
+            <img data-slot="image_b" alt="" />
+            <figcaption>SUBJECT B · ANOMALOUS</figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <div class="menu-panel" id="menu-panel-secondary">
+        <div class="panel-title">ADVISORY</div>
+        <p class="advisory" id="menu-advisory">
+          You are not the first observer assigned to Karon–7. You will not be the last.
+          The facility is stable. Subject A will assist you. Do not look at Subject B for longer than necessary.
+        </p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="menu-foot">
+    <span>v0.7.3 · build <span id="build-hash">0xA97F</span></span>
+    <span>UPLINK <span id="uplink-jitter">0.00ms</span></span>
+  </footer>
+</section>
+
+<!-- In-game HUD. Deliberately minimal. -->
+<section id="hud" class="screen hidden">
+  <div class="hud-corner hud-tl">
+    <div class="hud-line"><span>CYCLE</span><span id="hud-cycle">01</span></div>
+    <div class="hud-line"><span>T–</span><span id="hud-time">10:00</span></div>
+  </div>
+  <div class="hud-corner hud-tr">
+    <div class="hud-line"><span>ZONE</span><span id="hud-zone">—</span></div>
+    <div class="hud-line anomaly-line"><span>A.I.</span><span id="hud-anomaly">0.00</span></div>
+  </div>
+  <div class="hud-corner hud-bl">
+    <div class="hud-vitals">
+      <div class="vital-row">
+        <span class="vital-label">HP</span>
+        <div class="vital-bar"><div class="vital-fill hp" id="hp-fill"></div></div>
+        <span class="vital-num" id="hp-num">100</span>
+      </div>
+      <div class="vital-row">
+        <span class="vital-label">STA</span>
+        <div class="vital-bar"><div class="vital-fill sta" id="sta-fill"></div></div>
+      </div>
+      <div class="vital-row">
+        <span class="vital-label">LIGHT</span>
+        <div class="vital-bar"><div class="vital-fill battery" id="batt-fill"></div></div>
+      </div>
+    </div>
+    <div class="hud-hint" id="hud-hint"></div>
+  </div>
+  <div class="hud-corner hud-br">
+    <div class="hud-controls">
+      <span>[TAB] CCTV</span>
+      <span>[E] INTERACT</span>
+      <span>[ESC] MENU</span>
+    </div>
+  </div>
+
+  <!-- Crosshair. A tiny reticle, slightly imperfect. -->
+  <div class="reticle" aria-hidden="true">
+    <span></span><span></span><span></span><span></span>
+  </div>
+
+  <!-- System whisper lines. Messages that occasionally address the player. -->
+  <div id="whisper"></div>
+
+  <!-- Subtitle-like line for audio cues + interactions. -->
+  <div id="subtitle"></div>
+</section>
+
+<!-- CCTV / surveillance overlay. -->
+<section id="cctv" class="screen hidden">
+  <header class="cctv-head">
+    <span>SURVEILLANCE GRID · KARON–7</span>
+    <span id="cctv-cam-name">CAM-01</span>
+    <span id="cctv-timecode">00:00:00</span>
+  </header>
+
+  <div class="cctv-main" id="cctv-main"></div>
+
+  <aside class="cctv-side">
+    <div class="cctv-title">FEEDS</div>
+    <ul class="cctv-list" id="cctv-list"></ul>
+    <div class="cctv-meta">
+      <div><span>SIGNAL</span><span id="cctv-signal">0.00</span></div>
+      <div><span>DISTORTION</span><span id="cctv-distort">0.00</span></div>
+      <div><span>NOTE</span><span id="cctv-note">—</span></div>
+    </div>
+    <div class="cctv-help">
+      <div>[1–9] switch feed</div>
+      <div>[R] record anomaly</div>
+      <div>[TAB] exit grid</div>
+    </div>
+  </aside>
+</section>
+
+<!-- Terminal interface (for in-world computers). -->
+<section id="terminal" class="screen hidden">
+  <div class="term-frame">
+    <header class="term-head">
+      <span class="term-dot"></span>
+      <span id="term-title">K7–LAB–CONSOLE</span>
+      <span id="term-user">operator@karon-7</span>
+    </header>
+    <pre id="term-body"></pre>
+    <div class="term-input">
+      <span class="prompt">operator@karon-7:~$</span>
+      <input id="term-cmd" autocomplete="off" spellcheck="false" />
+    </div>
+  </div>
+</section>
+
+<!-- Pause / in-session menu. -->
+<section id="pause" class="screen hidden">
+  <div class="pause-card">
+    <h2>SYSTEM PAUSED</h2>
+    <button class="menu-btn" data-pause="resume">&gt; RESUME</button>
+    <button class="menu-btn" data-pause="save">&gt; SAVE STATE</button>
+    <button class="menu-btn" data-pause="menu">&gt; RETURN TO TERMINAL</button>
+    <p class="pause-note">Cycles continue while paused only in Observer mode. You are not in Observer mode.</p>
+  </div>
+</section>
+
+<!-- Damage vignette + jumpscare flash overlays. -->
+<div id="damage-vignette" aria-hidden="true"></div>
+<div id="scare-flash" aria-hidden="true"></div>
+
+<!-- Loop reset flash. -->
+<div id="loop-reset" class="hidden">
+  <div class="loop-reset-text">CYCLE RESET</div>
+</div>
+
+<!-- Ending card. -->
+<section id="ending" class="screen hidden">
+  <div class="ending-card">
+    <div class="ending-title" id="ending-title">—</div>
+    <div class="ending-body" id="ending-body">—</div>
+    <button class="menu-btn" data-ending="continue">&gt; CONTINUE OBSERVING</button>
+  </div>
+</section>
+
+<!-- App bootstrap. Everything else is loaded via ES modules from main.js. -->
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
